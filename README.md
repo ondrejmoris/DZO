@@ -1,5 +1,5 @@
 # DZO
- Digital image processing - exercises
+ Digital image processing - exercises in OpenCV
 
  ## List of completed exercises
  1) Gamma correction
@@ -14,3 +14,7 @@
  ## Run
  Developed in Visual Studio 2019 Community Edition
  * Click on DZO.sln
+
+## Requirements
+* OpenCV
+* Note: In this project OpenCV is in PATH.
