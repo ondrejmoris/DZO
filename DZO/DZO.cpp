@@ -294,6 +294,120 @@ void histogramEqualisation(Mat& srcImg, Mat& dstImg, int* cumulativeDisFun, int 
 	}
 }
 
+void projectiveTransform(const Mat& srcImg, Mat& dstImg, Point2d* mapPointsFrom, Point2d* mapPointsTo) {
+	Mat A = Mat(Size(8, 8), CV_64FC1);
+	Mat B = Mat(Size(1, 8), CV_64FC1);
+
+	for (int i = 0; i < 4; i++) {
+		int row = i * 2;
+
+		A.at<double>(row, 0) = mapPointsTo[i].y;
+		A.at<double>(row, 1) = 1;
+		A.at<double>(row, 2) = 0;
+		A.at<double>(row, 3) = 0;
+		A.at<double>(row, 4) = 0;
+		A.at<double>(row, 5) = -mapPointsFrom[i].x * mapPointsTo[i].x;
+		A.at<double>(row, 6) = -mapPointsFrom[i].x * mapPointsTo[i].y;
+		A.at<double>(row, 7) = -mapPointsFrom[i].x;
+
+		B.at<double>(row, 0) = -mapPointsTo[i].x;
+
+		A.at<double>(row + 1, 0) = 0;
+		A.at<double>(row + 1, 1) = 0;
+		A.at<double>(row + 1, 2) = mapPointsTo[i].x;
+		A.at<double>(row + 1, 3) = mapPointsTo[i].y;
+		A.at<double>(row + 1, 4) = 1;
+		A.at<double>(row + 1, 5) = -mapPointsFrom[i].y * mapPointsTo[i].x;
+		A.at<double>(row + 1, 6) = -mapPointsFrom[i].y * mapPointsTo[i].y;
+		A.at<double>(row + 1, 7) = -mapPointsFrom[i].y;
+
+		B.at<double>(row + 1, 0) = 0;
+	}
+
+	Mat res;
+	solve(A, B, res);
+	Mat perMat = Mat(Size(3, 3), CV_64FC1);
+	perMat.at<double>(0, 0) = 1; 
+
+	for (int i = 1; i < 9; i++) {
+		perMat.at<double>(i) = res.at<double>(i - 1);
+	}
+
+	Mat transMat = cv::Mat::eye(3, 3, CV_64FC1); 
+	transMat = transMat * perMat; 
+
+	for (int x = 0; x < dstImg.rows; x++) {
+		for (int y = 0; y < dstImg.cols; y++) {
+			Mat homPos = Mat(Matx31d(x, y, 1.0f)); 
+			Mat tranPosMat = transMat * homPos; 
+
+			Vec2d tranPos = Vec2d(tranPosMat.at<double>(0, 0) / tranPosMat.at<double>(2, 0), tranPosMat.at<double>(1, 0) / tranPosMat.at<double>(2, 0)); // Převedem zpátky z homogeního (x/1,y/1)
+
+			if (tranPos.val[0] >= 0 &&
+				tranPos.val[0] < srcImg.rows &&
+				tranPos.val[1] >= 0 &&
+				tranPos.val[1] < srcImg.cols)
+			{
+				dstImg.at<Vec3b>(x, y) = srcImg.at<Vec3b>(tranPos.val[0], tranPos.val[1]);
+			}
+		}
+	}
+}
+
+static void exercise7() {
+	Mat uneq = imread("images/uneq.jpg", IMREAD_GRAYSCALE);
+	if (uneq.empty())
+		cout << "Faild to load img" << endl;
+
+	imshow("No equalized img", uneq);
+	histogramEqualisation(uneq, uneq, getAndShowHisto(uneq, "input"), 251);
+	imshow("Equalized img", uneq);
+	getAndShowHisto(uneq, "output");
+}
+
+static void exercise8() {
+	Mat flag = imread("images/flag.png", IMREAD_COLOR);
+	Mat vsb = imread("images/vsb.jpg", IMREAD_COLOR);
+
+	Point2d to[4];
+	Point2d from[4];
+	from[0] = Point2d(0, 0);
+	from[1] = Point2d(215, 0);
+	from[2] = Point2d(215, 323);
+	from[3] = Point2d(0, 323);
+
+	to[0] = Point2d(107, 69);
+	to[1] = Point2d(134, 66);
+	to[2] = Point2d(122, 228);
+	to[3] = Point2d(76, 227);
+
+	projectiveTransform(flag, vsb, from, to);
+	imshow("vsb", vsb);
+}
+
+static void exercise6(Mat& src_8uc3_img1, Mat& geom_8uc3_img, RLDUserData& rld_user_data) {
+
+	src_8uc3_img1 = cv::imread("images/distorted_window.jpg", cv::IMREAD_COLOR);
+	if (src_8uc3_img1.empty())
+	{
+		printf("Unable to load image!\n");
+		exit(-1);
+	}
+
+	cv::namedWindow("Original Image");
+	cv::imshow("Original Image", src_8uc3_img1);
+
+	//geom_8uc3_img = src_8uc3_img1.clone();
+	geom_8uc3_img = Mat(src_8uc3_img1.size(), src_8uc3_img1.type(), Scalar(0, 0, 0));
+	apply_rld(0, (void*)&rld_user_data);
+
+	cv::namedWindow("Geom Dist");
+	cv::imshow("Geom Dist", geom_8uc3_img);
+
+	cv::createTrackbar("K1", "Geom Dist", &rld_user_data.K1, 100, apply_rld, &rld_user_data);
+	cv::createTrackbar("K2", "Geom Dist", &rld_user_data.K2, 100, apply_rld, &rld_user_data);
+}
+
 int main()
 {
 	cv::Mat src_8uc3_img = cv::imread("images/lena.png", IMREAD_COLOR); // load color image from file system to Mat variable, this will be loaded using 8 bits (uchar)
@@ -369,129 +483,22 @@ int main()
 #pragma endregion Discrete Fourier Transform, inverse Discrete Fourier Transform and filtering in the frequency domain
 
 #pragma region exercise 6
-	/*
+	
 	cv::Mat src_8uc3_img1, geom_8uc3_img;
 	RLDUserData rld_user_data(3.0, 1.0, src_8uc3_img1, geom_8uc3_img);
+	exercise6(src_8uc3_img1, geom_8uc3_img, rld_user_data);
 
-	src_8uc3_img1 = cv::imread("images/distorted_window.jpg", cv::IMREAD_COLOR);
-	if (src_8uc3_img1.empty())
-	{
-		printf("Unable to load image!\n");
-		exit(-1);
-	}
-
-	cv::namedWindow("Original Image");
-	cv::imshow("Original Image", src_8uc3_img1);
-
-	//geom_8uc3_img = src_8uc3_img1.clone();
-	geom_8uc3_img = Mat(src_8uc3_img1.size(), src_8uc3_img1.type(), Scalar(0, 0, 0));
-	apply_rld(0, (void*)&rld_user_data);
-
-	cv::namedWindow("Geom Dist");
-	cv::imshow("Geom Dist", geom_8uc3_img);
-
-	cv::createTrackbar("K1", "Geom Dist", &rld_user_data.K1, 100, apply_rld, &rld_user_data);
-	cv::createTrackbar("K2", "Geom Dist", &rld_user_data.K2, 100, apply_rld, &rld_user_data);
-	*/
 #pragma endregion Simple removal of geometric distortion
 
 #pragma region exercise 7
 
-	Mat uneq = imread("images/uneq.jpg", IMREAD_GRAYSCALE);
-	if (uneq.empty())
-		cout << "Faild to load img" << endl;
-
-	imshow("No equalized img", uneq);
-	histogramEqualisation(uneq, uneq, getAndShowHisto(uneq, "input"), 251);
-	imshow("Equalized img", uneq);
-	getAndShowHisto(uneq, "output");
+	//exercise7();
 
 #pragma endregion Histogram equalisation
 
 #pragma region exercise 8
-	Mat flag = imread("images/flag.jpg", IMREAD_COLOR);
-	Mat vsb = imread("images/vsb.jpg", IMREAD_COLOR);
-
-	Point2d to[4];
-	Point2d from[4];
-	from[0] = Point2d(0, 0);
-	from[1] = Point2d(323, 0);
-	from[2] = Point2d(323, 215);
-	from[3] = Point2d(0, 215);
-
-	to[0] = Point2d(69, 107);
-	to[1] = Point2d(227, 76);
-	to[2] = Point2d(228, 122);
-	to[3] = Point2d(66, 134);
-
-	// 8x2 v případě jedné souřadnice... Pro 4 souřadnice 8x8
-	Mat A = Mat(Size(8, 8), CV_64FC1);
-	// Matice pravých stran
-	Mat B = Mat(Size(1, 8), CV_64FC1);
-	for (int i = 0; i < 4; i++) {
-		int row = i * 2;
-
-		// První řádek
-		A.at<double>(row, 0) = to[i].y;
-		A.at<double>(row, 1) = 1;
-		A.at<double>(row, 2) = 0;
-		A.at<double>(row, 3) = 0;
-		A.at<double>(row, 4) = 0;
-		A.at<double>(row, 5) = -from[i].x * to[i].x;
-		A.at<double>(row, 6) = -from[i].x * to[i].y;
-		A.at<double>(row, 7) = -from[i].x;
-		// Nastavení pravé strany
-		B.at<double>(row, 0) = -to[i].x;
-
-		// Druhý řádek
-		A.at<double>(row + 1, 0) = 0;
-		A.at<double>(row + 1, 1) = 0;
-		A.at<double>(row + 1, 2) = to[i].x;
-		A.at<double>(row + 1, 3) = to[i].y;
-		A.at<double>(row + 1, 4) = 1;
-		A.at<double>(row + 1, 5) = -from[i].y * to[i].x;
-		A.at<double>(row + 1, 6) = -from[i].y * to[i].y;
-		A.at<double>(row + 1, 7) = -from[i].y;
-		// Nastavení pravé strany
-		B.at<double>(row + 1, 0) = 0;
-	}
 	
-	// Výsledne parametry p... Je třeba převést na z 1x9 na 3x3
-	Mat res;
-	solve(A, B, res);
-	Mat perMat = Mat(Size(3, 3), CV_64FC1); 
-	perMat.at<double>(0, 0) = 1; // První parametr je třeba nastavit na 1 podle skript
-
-	for (int i = 1; i < 9; i++) {
-		perMat.at<double>(i) = res.at<double>(i - 1);
-	}
-	cout << perMat << endl;
-
-	Mat transMat = cv::Mat::eye(3, 3, CV_64FC1); // Vytvoří matici identity pro daný typ(64FC1)
-	transMat = transMat * perMat; // Identity se vynásobí s matici perspektivy a dostaneme transformační matici
-
-	for (int x = 0; x < vsb.rows; x++) {
-		for (int y = 0; y < vsb.cols; y++) {
-			Mat homPos = Mat(Matx31d(x, y, 1.0f)); // Transformace se provadí v homogením systému -> převedem o dimenzi výše
-			Mat tranPosMat = transMat * homPos; // Provede se transformace
-
-			Vec2d tranPos = Vec2d(tranPosMat.at<double>(0, 0) / tranPosMat.at<double>(2, 0), tranPosMat.at<double>(1, 0) / tranPosMat.at<double>(2, 0)); // Převedem zpátky z homogeního (x/1,y/1)
-			//cout << tranPos << endl;
-			// Ověřujem jestli jsme v oblasti te vlajky
-			if (tranPos.val[0] >= 0 &&
-				tranPos.val[0] < flag.rows &&
-				tranPos.val[1] >= 0 &&
-				tranPos.val[1] < flag.cols) 
-			{
-				cout << "now" << endl;
-				vsb.at<Vec3b>(x, y) = flag.at<Vec3b>(tranPos.val[0], tranPos.val[1]);
-			}
-		}
-	}
-
-	imshow("vsb", vsb);
-
-	// https://github.com/Kobzol/DZO/blob/master/dzo/transformation.h
+	//exercise8();
 
 #pragma endregion Perspective transform
 
