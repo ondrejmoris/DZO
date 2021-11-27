@@ -408,6 +408,92 @@ int main()
 
 #pragma endregion Histogram equalisation
 
+#pragma region exercise 8
+	Mat flag = imread("images/flag.jpg", IMREAD_COLOR);
+	Mat vsb = imread("images/vsb.jpg", IMREAD_COLOR);
+
+	Point2d to[4];
+	Point2d from[4];
+	from[0] = Point2d(0, 0);
+	from[1] = Point2d(323, 0);
+	from[2] = Point2d(323, 215);
+	from[3] = Point2d(0, 215);
+
+	to[0] = Point2d(69, 107);
+	to[1] = Point2d(227, 76);
+	to[2] = Point2d(228, 122);
+	to[3] = Point2d(66, 134);
+
+	// 8x2 v případě jedné souřadnice... Pro 4 souřadnice 8x8
+	Mat A = Mat(Size(8, 8), CV_64FC1);
+	// Matice pravých stran
+	Mat B = Mat(Size(1, 8), CV_64FC1);
+	for (int i = 0; i < 4; i++) {
+		int row = i * 2;
+
+		// První řádek
+		A.at<double>(row, 0) = to[i].y;
+		A.at<double>(row, 1) = 1;
+		A.at<double>(row, 2) = 0;
+		A.at<double>(row, 3) = 0;
+		A.at<double>(row, 4) = 0;
+		A.at<double>(row, 5) = -from[i].x * to[i].x;
+		A.at<double>(row, 6) = -from[i].x * to[i].y;
+		A.at<double>(row, 7) = -from[i].x;
+		// Nastavení pravé strany
+		B.at<double>(row, 0) = -to[i].x;
+
+		// Druhý řádek
+		A.at<double>(row + 1, 0) = 0;
+		A.at<double>(row + 1, 1) = 0;
+		A.at<double>(row + 1, 2) = to[i].x;
+		A.at<double>(row + 1, 3) = to[i].y;
+		A.at<double>(row + 1, 4) = 1;
+		A.at<double>(row + 1, 5) = -from[i].y * to[i].x;
+		A.at<double>(row + 1, 6) = -from[i].y * to[i].y;
+		A.at<double>(row + 1, 7) = -from[i].y;
+		// Nastavení pravé strany
+		B.at<double>(row + 1, 0) = 0;
+	}
+	
+	// Výsledne parametry p... Je třeba převést na z 1x9 na 3x3
+	Mat res;
+	solve(A, B, res);
+	Mat perMat = Mat(Size(3, 3), CV_64FC1); 
+	perMat.at<double>(0, 0) = 1; // První parametr je třeba nastavit na 1 podle skript
+
+	for (int i = 1; i < 9; i++) {
+		perMat.at<double>(i) = res.at<double>(i - 1);
+	}
+	cout << perMat << endl;
+
+	Mat transMat = cv::Mat::eye(3, 3, CV_64FC1); // Vytvoří matici identity pro daný typ(64FC1)
+	transMat = transMat * perMat; // Identity se vynásobí s matici perspektivy a dostaneme transformační matici
+
+	for (int x = 0; x < vsb.rows; x++) {
+		for (int y = 0; y < vsb.cols; y++) {
+			Mat homPos = Mat(Matx31d(x, y, 1.0f)); // Transformace se provadí v homogením systému -> převedem o dimenzi výše
+			Mat tranPosMat = transMat * homPos; // Provede se transformace
+
+			Vec2d tranPos = Vec2d(tranPosMat.at<double>(0, 0) / tranPosMat.at<double>(2, 0), tranPosMat.at<double>(1, 0) / tranPosMat.at<double>(2, 0)); // Převedem zpátky z homogeního (x/1,y/1)
+			//cout << tranPos << endl;
+			// Ověřujem jestli jsme v oblasti te vlajky
+			if (tranPos.val[0] >= 0 &&
+				tranPos.val[0] < flag.rows &&
+				tranPos.val[1] >= 0 &&
+				tranPos.val[1] < flag.cols) 
+			{
+				cout << "now" << endl;
+				vsb.at<Vec3b>(x, y) = flag.at<Vec3b>(tranPos.val[0], tranPos.val[1]);
+			}
+		}
+	}
+
+	imshow("vsb", vsb);
+
+	// https://github.com/Kobzol/DZO/blob/master/dzo/transformation.h
+
+#pragma endregion Perspective transform
 
 	/*
 	cv::Mat gray_8uc1_img; // declare variable to hold grayscale version of img variable, gray levels wil be represented using 8 bits (uchar)
