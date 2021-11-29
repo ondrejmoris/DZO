@@ -64,13 +64,14 @@ void convulation(Mat& img) {
 	}
 }
 
-void convulation(Mat& img, Mat& convMask, int convK) {
+template <typename T>
+void convulation(const Mat& srcImg, Mat& dstImg , Mat& convMask, T convK) {
 	Mat matInImg;
 	//Size sizeOfMath = convMask.size();
-	for (int r = (convMask.rows / 2); r < img.rows - (convMask.rows / 2); r++) {
-		for (int c = (convMask.cols / 2); c < img.cols - (convMask.cols / 2); c++) {
-			matInImg = (img(cv::Rect(Point(c - 1, r - 1), Point(c + 2, r + 2))));
-			img.at<uchar>(r, c) = (matInImg.dot(convMask) / convK);
+	for (int r = (convMask.rows / 2); r < srcImg.rows - (convMask.rows / 2); r++) {
+		for (int c = (convMask.cols / 2); c < srcImg.cols - (convMask.cols / 2); c++) {
+			matInImg = (srcImg(cv::Rect(Point(c - 1, r - 1), Point(c + 2, r + 2))));
+			dstImg.at<T>(r, c) = (matInImg.dot(convMask) / convK);
 		}
 	}
 }
@@ -341,7 +342,7 @@ void projectiveTransform(const Mat& srcImg, Mat& dstImg, Point2d* mapPointsFrom,
 			Mat homPos = Mat(Matx31d(x, y, 1.0f)); 
 			Mat tranPosMat = transMat * homPos; 
 
-			Vec2d tranPos = Vec2d(tranPosMat.at<double>(0, 0) / tranPosMat.at<double>(2, 0), tranPosMat.at<double>(1, 0) / tranPosMat.at<double>(2, 0)); // Převedem zpátky z homogeního (x/1,y/1)
+			Vec2d tranPos = Vec2d(tranPosMat.at<double>(0, 0) / tranPosMat.at<double>(2, 0), tranPosMat.at<double>(1, 0) / tranPosMat.at<double>(2, 0)); 
 
 			if (tranPos.val[0] >= 0 &&
 				tranPos.val[0] < srcImg.rows &&
@@ -408,6 +409,89 @@ static void exercise6(Mat& src_8uc3_img1, Mat& geom_8uc3_img, RLDUserData& rld_u
 	cv::createTrackbar("K2", "Geom Dist", &rld_user_data.K2, 100, apply_rld, &rld_user_data);
 }
 
+void sobel(const Mat& srcImg, Mat& dstImg) {
+	Mat G_x = Mat(srcImg.size(), srcImg.type());
+	Mat G_y = Mat(srcImg.size(), srcImg.type());
+	Mat mask = Mat(Size(3, 3), CV_64FC1);
+
+	// (row,col)
+	mask.at<double>(0, 0) = 1.0;
+	mask.at<double>(0, 1) = 0;
+	mask.at<double>(0, 2) = -1.0;
+
+	mask.at<double>(1, 0) = 2.0;
+	mask.at<double>(1, 1) = 0;
+	mask.at<double>(1, 2) = -2.0;
+
+	mask.at<double>(2, 0) = 1.0;
+	mask.at<double>(2, 1) = 0;
+	mask.at<double>(2, 2) = -1.0;
+
+	convulation<double>(srcImg, G_x, mask, 1.0);
+	transpose(mask, mask);
+	convulation<double>(srcImg, G_y, mask, 1.0);
+	
+	magnitude(G_x, G_y, dstImg);
+}
+
+static void exercise9() {
+	Mat valve = cv::imread("images/valve.png", IMREAD_GRAYSCALE);
+	if (valve.empty()) {
+		cout << "Faild to load valve img!" << endl;
+		return;
+	}
+	imshow("valve orig", valve);
+	valve.convertTo(valve, CV_64FC1, 1.0 / 255.0);
+	sobel(valve, valve);
+	imshow("Valve sobel", valve);
+}
+
+// Without linear interpolation and fixed values
+void nonMaximaSuppression(const Mat& srcImg, Mat& dstImg) {
+	Mat mag = Mat(srcImg.rows, srcImg.cols, srcImg.type());
+	for (int r = 1; r < srcImg.rows - 1; r++) {
+		for (int c = 1; c < srcImg.cols - 1; c++) {
+			double F_x = (srcImg.at<double>(r, c - 1) - srcImg.at<double>(r, c + 1)) / 2;
+			double F_y = (srcImg.at<double>(r - 1, c) - srcImg.at<double>(r + 1, c)) / 2;
+			mag.at<double>(r, c) = sqrt((F_x * F_x) + (F_y * F_y));
+		}
+	}
+	//Mat res = Mat(srcImg.rows, srcImg.cols, srcImg.type());
+	for (int r = 1; r < mag.rows - 1; r++) {
+		for (int c = 1; c < mag.cols - 1; c++) {
+			if ((mag.at<double>(r, c) > mag.at<double>(r, c + 1)) && (mag.at<double>(r, c) < mag.at<double>(r, c - 1))) {
+				dstImg.at<double>(r, c) = 1.0;
+			}
+			else {
+				dstImg.at<double>(r, c) = 0;
+			}
+		}
+	}
+}
+
+// Without linear interpolation
+void nonMaximaSuppressionDoubleThres(const Mat& srcImg, Mat& dstImg) {
+	Mat mag = Mat(srcImg.rows, srcImg.cols, srcImg.type());
+	for (int r = 1; r < srcImg.rows - 1; r++) {
+		for (int c = 1; c < srcImg.cols - 1; c++) {
+			double F_x = (srcImg.at<double>(r, c - 1) - srcImg.at<double>(r, c + 1)) / 2;
+			double F_y = (srcImg.at<double>(r - 1, c) - srcImg.at<double>(r + 1, c)) / 2;
+			mag.at<double>(r, c) = sqrt((F_x * F_x) + (F_y * F_y));
+		}
+	}
+	//Mat res = Mat(srcImg.rows, srcImg.cols, srcImg.type());
+	for (int r = 1; r < mag.rows - 1; r++) {
+		for (int c = 1; c < mag.cols - 1; c++) {
+			if ((mag.at<double>(r, c) > 0.05) && (mag.at<double>(r, c) < 0.1)) {
+				dstImg.at<double>(r, c) = 1.0;
+			}
+			else {
+				dstImg.at<double>(r, c) = 0;
+			}
+		}
+	}
+}
+
 int main()
 {
 	cv::Mat src_8uc3_img = cv::imread("images/lena.png", IMREAD_COLOR); // load color image from file system to Mat variable, this will be loaded using 8 bits (uchar)
@@ -449,8 +533,9 @@ int main()
 
 #pragma region exercise 2
 
+	//imshow("moon orig", moon);
 	//Mat con = Mat(Size(3, 3), moon.type(), 1);
-	//convulation(moon, con, 9);
+	//convulation<uchar>(moon, moon, con, 9);
 	//imshow("con", moon);
 
 #pragma endregion convolution
@@ -484,9 +569,9 @@ int main()
 
 #pragma region exercise 6
 	
-	cv::Mat src_8uc3_img1, geom_8uc3_img;
-	RLDUserData rld_user_data(3.0, 1.0, src_8uc3_img1, geom_8uc3_img);
-	exercise6(src_8uc3_img1, geom_8uc3_img, rld_user_data);
+	//cv::Mat src_8uc3_img1, geom_8uc3_img;
+	//RLDUserData rld_user_data(3.0, 1.0, src_8uc3_img1, geom_8uc3_img);
+	//exercise6(src_8uc3_img1, geom_8uc3_img, rld_user_data);
 
 #pragma endregion Simple removal of geometric distortion
 
@@ -501,6 +586,27 @@ int main()
 	//exercise8();
 
 #pragma endregion Perspective transform
+
+#pragma region exercise 9
+
+	//exercise9();
+
+#pragma endregion Sobel operator
+
+#pragma region exercise 10
+
+	Mat valve = cv::imread("images/valve.png", IMREAD_GRAYSCALE);
+	valve.convertTo(valve, CV_64FC1, 1.0 / 255.0);
+	//Mat valveEdit = Mat(valveEdit.size(), valveEdit.type());
+	if (valve.empty()) {
+		cout << "Faild to load valve img!" << endl;
+	}
+
+	//nonMaximaSuppression(valve, valve);
+	nonMaximaSuppressionDoubleThres(valve, valve);
+	imshow("mag", valve);
+
+#pragma endregion Edge Thinning and Double Thresholding
 
 	/*
 	cv::Mat gray_8uc1_img; // declare variable to hold grayscale version of img variable, gray levels wil be represented using 8 bits (uchar)
@@ -545,6 +651,7 @@ int main()
 	*/
 
 	cv::waitKey(0); // wait until keypressed
+	//destroyAllWindows();
 
 	return 0;
 }

@@ -11,6 +11,8 @@
  7) Lens distortion removal
  8) Histogram equalization
  9) Perspective transform
+ 10) Sobel operator
+ 11) Edge thinning and double thresholding -- Not optimized. For now with fixed values.
 
  ## Run
  Developed in Visual Studio 2019 Community Edition
