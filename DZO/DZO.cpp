@@ -7,6 +7,25 @@
 using namespace std;
 using namespace cv;
 
+Vec3b bilinInterpol(const Mat& srcImg, float x, float y) {
+	if (x - 1 < 0 || x + 1 > srcImg.cols || y - 1 < 0 || y + 1 > srcImg.rows) {
+		return srcImg.at<Vec3b>(y, x);
+	}
+
+	Vec3b v1 = srcImg.at<Vec3b>(floor(y), floor(x));
+	Vec3b v2 = srcImg.at<Vec3b>(ceil(y), floor(x));
+	Vec3b v3 = srcImg.at<Vec3b>(floor(y), ceil(x));
+	Vec3b v4 = srcImg.at<Vec3b>(ceil(y), ceil(x));
+
+	double tmp;
+	double q1 = (1 - modf(x, &tmp)) * (1 - modf(y, &tmp));
+	double q2 = (1 - modf(x, &tmp)) * (modf(y, &tmp));
+	double q3 = (modf(x, &tmp)) * (1 - modf(y, &tmp));
+	double q4 = (modf(x, &tmp)) * (modf(y, &tmp));
+
+	return Vec3b((v1 * q1) + (v2 * q2) + (v3 * q3) + (v4 * q4));
+}
+
 struct RLDUserData {
 	cv::Mat& src_8uc3_img;
 	cv::Mat& undistorted_8uc3_img;
@@ -33,12 +52,13 @@ void geom_dist(cv::Mat& src_8uc3_img, cv::Mat& dst_8uc3_img, bool bili, double K
 			float fi = 1 + K1 * r_2 + K2 * pow(r_2, 2);
 			float X_d = (X_n * pow(fi, -1)) + C_u;
 			float Y_d = (Y_n * pow(fi, -1)) + C_v;
-			int Y = Y_d;
-			int X = X_d;
-			if (Y >= src_8uc3_img.rows || X >= src_8uc3_img.cols || X < 0 || Y < 0)
+			//int Y = Y_d;
+			//int X = X_d;
+			if (Y_d >= src_8uc3_img.rows || X_d >= src_8uc3_img.cols || X_d < 0 || Y_d < 0)
 				continue;
 			//Vec3b src = src_8uc3_img.at<Vec3b>(Y, X);
-			dst_8uc3_img.at<Vec3b>(r, c) = src_8uc3_img.at<Vec3b>(Y, X);
+			//dst_8uc3_img.at<Vec3b>(r, c) = src_8uc3_img.at<Vec3b>(Y, X);
+			dst_8uc3_img.at<Vec3b>(r, c) = bilinInterpol(src_8uc3_img, X_d, Y_d);
 		}
 	}
 }
@@ -492,6 +512,19 @@ void nonMaximaSuppressionDoubleThres(const Mat& srcImg, Mat& dstImg) {
 	}
 }
 
+static void exercise10() {
+	Mat valve = cv::imread("images/valve.png", IMREAD_GRAYSCALE);
+	valve.convertTo(valve, CV_64FC1, 1.0 / 255.0);
+	//Mat valveEdit = Mat(valveEdit.size(), valveEdit.type());
+	if (valve.empty()) {
+		cout << "Faild to load valve img!" << endl;
+	}
+
+	//nonMaximaSuppression(valve, valve);
+	nonMaximaSuppressionDoubleThres(valve, valve);
+	imshow("mag", valve);
+}
+
 int main()
 {
 	cv::Mat src_8uc3_img = cv::imread("images/lena.png", IMREAD_COLOR); // load color image from file system to Mat variable, this will be loaded using 8 bits (uchar)
@@ -569,9 +602,9 @@ int main()
 
 #pragma region exercise 6
 	
-	//cv::Mat src_8uc3_img1, geom_8uc3_img;
-	//RLDUserData rld_user_data(3.0, 1.0, src_8uc3_img1, geom_8uc3_img);
-	//exercise6(src_8uc3_img1, geom_8uc3_img, rld_user_data);
+	cv::Mat src_8uc3_img1, geom_8uc3_img;
+	RLDUserData rld_user_data(3.0, 1.0, src_8uc3_img1, geom_8uc3_img);
+	exercise6(src_8uc3_img1, geom_8uc3_img, rld_user_data);
 
 #pragma endregion Simple removal of geometric distortion
 
@@ -595,16 +628,7 @@ int main()
 
 #pragma region exercise 10
 
-	Mat valve = cv::imread("images/valve.png", IMREAD_GRAYSCALE);
-	valve.convertTo(valve, CV_64FC1, 1.0 / 255.0);
-	//Mat valveEdit = Mat(valveEdit.size(), valveEdit.type());
-	if (valve.empty()) {
-		cout << "Faild to load valve img!" << endl;
-	}
-
-	//nonMaximaSuppression(valve, valve);
-	nonMaximaSuppressionDoubleThres(valve, valve);
-	imshow("mag", valve);
+	//exercise10();
 
 #pragma endregion Edge Thinning and Double Thresholding
 
